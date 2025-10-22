@@ -1,58 +1,86 @@
 import express from "express";
-import { createServer } from "http";
+import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.use(cors({ origin: "*" }));
 
-const server = createServer(app);
-
-// In production you can restrict 'origin' to your Vercel domain.
-// For now keep "*" so local dev + deployed frontend both work.
+const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
+  cors: { origin: "*" },
 });
 
-const sessions = {}; // { CODE: { question, options, votes: number[] } }
+const sessions = {}; // { code: { question, options, votes } }
+
+// ✅ Generate a random code
+function generateCode() {
+  return Math.random().toString(36).substring(2, 12);
+}
 
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("🟢 New user connected:", socket.id);
 
+  // ✅ Create a new session
   socket.on("create-session", () => {
-    const code = Math.random().toString(36).substring(2, 7).toUpperCase();
-    sessions[code] = { question: "", options: [], votes: [] };
+    const code = generateCode();
+    sessions[code] = { question: null, options: [], votes: [] };
     socket.join(code);
     socket.emit("session-created", code);
+    console.log("📦 Session created:", code);
   });
 
-  socket.on("join_session", ({ code }) => {
-    if (sessions[code]) socket.join(code);
+  // ✅ Join an existing session
+  socket.on("join_session", (code, callback) => {
+    if (!sessions[code]) {
+      console.warn("❌ Invalid join attempt:", code);
+      if (callback) callback({ success: false, message: "Invalid code" });
+      return;
+    }
+
+    socket.join(code);
+    console.log(`👥 User ${socket.id} joined ${code}`);
+    if (callback) callback({ success: true });
+
+    // If question is already live, send it immediately
+    const session = sessions[code];
+    if (session.question) {
+      socket.emit("receive_question", {
+        question: session.question,
+        options: session.options,
+      });
+    }
   });
 
+  // ✅ Host sends question
   socket.on("send_question", ({ code, question, options }) => {
     if (!sessions[code]) return;
     sessions[code].question = question;
     sessions[code].options = options;
-    sessions[code].votes = new Array(options.length).fill(0);
-    io.to(code).emit("new_question", { code, question, options });
-    io.to(code).emit("update_results", sessions[code].votes);
+    sessions[code].votes = Array(options.length).fill(0);
+
+    console.log("📢 Question sent:", { code, question, options });
+    io.to(code).emit("receive_question", { question, options });
   });
 
-  socket.on("send_vote", ({ code, index }) => {
-    if (!sessions[code]) return;
-    if (index >= 0 && index < sessions[code].options.length) {
-      sessions[code].votes[index] = (sessions[code].votes[index] || 0) + 1;
-      io.to(code).emit("update_results", sessions[code].votes);
+  // ✅ Participant votes
+  socket.on("submit_vote", ({ code, index }) => {
+    const session = sessions[code];
+    if (!session) return;
+
+    if (session.votes[index] !== undefined) {
+      session.votes[index] += 1;
+      io.to(code).emit("update_results", session.votes);
+      console.log("🗳 Vote registered:", code, session.votes);
     }
+  });
+
+  socket.on("disconnect", () => {
+    console.log("🔴 Disconnected:", socket.id);
   });
 });
 
-app.get("/", (_, res) => res.send("✅ OpenMenti backend running"));
-
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+server.listen(PORT, () =>
+  console.log(`🚀 Server running on port ${PORT}`)
+);
