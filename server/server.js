@@ -1,84 +1,140 @@
-import express from "express";
-import http from "http";
-import { Server } from "socket.io";
-import cors from "cors";
+import 'dotenv/config';
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+
+import { connectDB } from './config/database.js';
+import { setSocketIO } from './services/alertService.js';
+
+import authRoutes from './routes/auth.js';
+import patientRoutes from './routes/patients.js';
+import providerRoutes from './routes/providers.js';
+import organizationRoutes from './routes/organizations.js';
+import encounterRoutes from './routes/encounters.js';
+import observationRoutes from './routes/observations.js';
+import conditionRoutes from './routes/conditions.js';
+import medicationRoutes from './routes/medications.js';
+import fhirRoutes from './routes/fhir.js';
+import pipelineRoutes from './routes/pipelines.js';
+import qualityRoutes from './routes/quality.js';
+import analyticsRoutes from './routes/analytics.js';
 
 const app = express();
-app.use(cors({ origin: "*" }));
 
+// ─── Security & Middleware ───────────────────────────────────────────────────
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+  credentials: true
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Rate limiter: 500 req / 15 min per IP
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 500,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, slow down.' }
+}));
+
+// ─── API Routes ──────────────────────────────────────────────────────────────
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/patients', patientRoutes);
+app.use('/api/v1/providers', providerRoutes);
+app.use('/api/v1/organizations', organizationRoutes);
+app.use('/api/v1/encounters', encounterRoutes);
+app.use('/api/v1/observations', observationRoutes);
+app.use('/api/v1/conditions', conditionRoutes);
+app.use('/api/v1/medications', medicationRoutes);
+app.use('/api/v1/fhir', fhirRoutes);
+app.use('/api/v1/pipelines', pipelineRoutes);
+app.use('/api/v1/quality', qualityRoutes);
+app.use('/api/v1/analytics', analyticsRoutes);
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    service: 'HealthBridge API',
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/', (req, res) => {
+  res.json({
+    name: 'HealthBridge Health Data Platform',
+    version: '1.0.0',
+    description: 'FHIR R4 native health data management platform',
+    docs: '/api/v1/fhir/metadata',
+    endpoints: {
+      auth: '/api/v1/auth',
+      patients: '/api/v1/patients',
+      providers: '/api/v1/providers',
+      encounters: '/api/v1/encounters',
+      observations: '/api/v1/observations',
+      conditions: '/api/v1/conditions',
+      medications: '/api/v1/medications',
+      fhir: '/api/v1/fhir',
+      pipelines: '/api/v1/pipelines',
+      quality: '/api/v1/quality',
+      analytics: '/api/v1/analytics',
+      organizations: '/api/v1/organizations'
+    }
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: `Route ${req.method} ${req.path} not found` });
+});
+
+// Global error handler
+app.use((err, req, res, _next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// ─── Socket.io — real-time alerts & pipeline events ─────────────────────────
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: { origin: process.env.ALLOWED_ORIGINS?.split(',') || '*', credentials: true }
 });
 
-const sessions = {}; // code -> {question, options, votes}
+setSocketIO(io);
 
-function generateCode() {
-  return Math.random().toString(36).substring(2, 10);
-}
-
-io.on("connection", (socket) => {
-  console.log("✅ Connected:", socket.id);
-
-  // 🟢 Host creates session
-  socket.on("create-session", () => {
-    const code = generateCode();
-    sessions[code] = { question: null, options: [], votes: [] };
-    socket.join(code);
-    socket.emit("session-created", code);
-    console.log("📦 Created session:", code);
-  });
-
-  // 🟢 Host sends question
-  socket.on("send_question", ({ code, question, options }) => {
-    if (!sessions[code]) return;
-    sessions[code].question = question;
-    sessions[code].options = options;
-    sessions[code].votes = Array(options.length).fill(0);
-
-    console.log(`📢 New question for ${code}:`, question);
-    io.to(code).emit("receive_question", { question, options });
-  });
-
-  // 🟢 Participant joins
-  socket.on("join_session", (code, callback) => {
-    console.log("🔵 Join request:", code);
-
-    if (!sessions[code]) {
-      callback?.({ success: false, message: "Invalid session code" });
-      console.log("❌ Invalid code:", code);
-      return;
-    }
-
-    socket.join(code);
-    callback?.({ success: true });
-    console.log(`👥 ${socket.id} joined ${code}`);
-
-    // If question already exists, send it immediately
-    const session = sessions[code];
-    if (session.question) {
-      socket.emit("receive_question", {
-        question: session.question,
-        options: session.options,
-      });
-      console.log("📨 Sent existing question to new joiner");
-    }
-  });
-
-  // 🟢 Participant votes
-  socket.on("submit_vote", ({ code, index }) => {
-    const session = sessions[code];
-    if (!session) return;
-
-    session.votes[index]++;
-    io.to(code).emit("update_results", session.votes);
-    console.log("🗳 Vote added for", code, "→", session.votes);
-  });
-
-  socket.on("disconnect", () =>
-    console.log("❌ Disconnected:", socket.id)
-  );
+io.use((socket, next) => {
+  // Org-room membership: client passes orgId in handshake auth
+  const orgId = socket.handshake.auth?.orgId;
+  if (orgId) {
+    socket.orgId = orgId;
+    socket.join(`org:${orgId}`);
+  }
+  next();
 });
 
+io.on('connection', (socket) => {
+  console.log(`🔗 Client connected: ${socket.id} | org: ${socket.orgId || 'anon'}`);
+  socket.on('disconnect', () => console.log(`❌ Disconnected: ${socket.id}`));
+});
+
+// ─── Boot ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log(`🚀 Server live on port ${PORT}`));
+
+connectDB().then(() => {
+  server.listen(PORT, () => {
+    console.log(`
+🏥 HealthBridge Health Data Platform
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 API:        http://localhost:${PORT}
+📋 FHIR R4:    http://localhost:${PORT}/api/v1/fhir/metadata
+❤️  Health:    http://localhost:${PORT}/health
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    `);
+  });
+});
