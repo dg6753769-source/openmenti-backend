@@ -20,7 +20,7 @@ export default function Home() {
     }).catch(console.error);
   }, []);
 
-  const handlePlay = (track, idx) => {
+  const handlePlay = (track) => {
     setQueue(tracks);
     loadAndPlay(track);
   };
@@ -73,11 +73,11 @@ export default function Home() {
       <section className="px-6 max-w-6xl mx-auto mb-16">
         <h2 className="text-2xl font-bold mb-6">Featured Tracks</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {tracks.map((track, idx) => (
+          {tracks.map((track) => (
             <TrackRow
               key={track.id}
               track={track}
-              onPlay={() => handlePlay(track, idx)}
+              onPlay={() => handlePlay(track)}
               onVault={() => openVault(track.artist_profiles)}
             />
           ))}

@@ -18,7 +18,14 @@ router.get("/dashboard", authenticate, requireRole("artist"), async (req, res) =
   const artistId = profile.id;
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Run all queries in parallel for performance
+  // Fetch artist's track IDs first — Supabase JS v2 does not accept builder objects in .in()
+  const { data: artistTracks } = await supabase
+    .from("tracks")
+    .select("id")
+    .eq("artist_id", artistId);
+
+  const trackIds = (artistTracks || []).map((t) => t.id);
+
   const [
     earningsResult,
     streamsResult,
@@ -26,30 +33,26 @@ router.get("/dashboard", authenticate, requireRole("artist"), async (req, res) =
     topTracksResult,
     recentTransactionsResult,
   ] = await Promise.all([
-    // Total earnings (paid transactions)
     supabase
       .from("transactions")
       .select("amount_paise, artist_payout_paise, type, created_at")
       .eq("artist_id", artistId)
       .eq("status", "paid"),
 
-    // Stream events last 30 days
-    supabase
-      .from("stream_events")
-      .select("created_at, type")
-      .in("track_id",
-        supabase.from("tracks").select("id").eq("artist_id", artistId)
-      )
-      .gte("created_at", thirtyDaysAgo),
+    trackIds.length > 0
+      ? supabase
+          .from("stream_events")
+          .select("created_at, type")
+          .in("track_id", trackIds)
+          .gte("created_at", thirtyDaysAgo)
+      : Promise.resolve({ data: [] }),
 
-    // Total unique fans
     supabase
       .from("fan_memberships")
       .select("fan_id")
       .eq("artist_id", artistId)
       .eq("status", "active"),
 
-    // Top tracks by play count
     supabase
       .from("tracks")
       .select("id, title, play_count, is_vault, cover_art_url")
@@ -57,10 +60,10 @@ router.get("/dashboard", authenticate, requireRole("artist"), async (req, res) =
       .order("play_count", { ascending: false })
       .limit(5),
 
-    // Recent transactions
+    // fan_id FK must be explicitly named so PostgREST picks the right users join
     supabase
       .from("transactions")
-      .select("id, type, amount_paise, artist_payout_paise, status, created_at, users(name)")
+      .select("id, type, amount_paise, artist_payout_paise, status, created_at, users!fan_id(name)")
       .eq("artist_id", artistId)
       .eq("status", "paid")
       .order("created_at", { ascending: false })

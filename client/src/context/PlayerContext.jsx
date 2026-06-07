@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useRef, useCallback } from "react";
+import { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import api from "../services/api";
 
 const PlayerContext = createContext(null);
@@ -11,6 +11,12 @@ export const PlayerProvider = ({ children }) => {
   const [queue, setQueue] = useState([]);
   const audioRef = useRef(null);
 
+  // Ref always points to latest queue + currentTrack — avoids stale closures in audio callbacks
+  const queueRef = useRef(queue);
+  const currentTrackRef = useRef(currentTrack);
+  useEffect(() => { queueRef.current = queue; }, [queue]);
+  useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
+
   const loadAndPlay = useCallback(async (track) => {
     try {
       const res = await api.get(`/music/${track.id}/stream`);
@@ -18,21 +24,30 @@ export const PlayerProvider = ({ children }) => {
 
       if (audioRef.current) {
         audioRef.current.pause();
+        audioRef.current.ontimeupdate = null;
+        audioRef.current.onended = null;
       }
-      audioRef.current = new Audio(url);
-      audioRef.current.volume = volume;
 
-      audioRef.current.ontimeupdate = () => {
-        const pct = (audioRef.current.currentTime / audioRef.current.duration) * 100;
-        setProgress(pct || 0);
+      const audio = new Audio(url);
+      audio.volume = volume;
+      audioRef.current = audio;
+
+      audio.ontimeupdate = () => {
+        const pct = (audio.currentTime / audio.duration) * 100;
+        setProgress(Number.isFinite(pct) ? pct : 0);
       };
 
-      audioRef.current.onended = () => {
+      // Use refs so this callback always sees the latest queue/currentTrack
+      audio.onended = () => {
         setIsPlaying(false);
-        playNext();
+        const q = queueRef.current;
+        const ct = currentTrackRef.current;
+        if (!ct || q.length === 0) return;
+        const idx = q.findIndex((t) => t.id === ct.id);
+        if (idx < q.length - 1) loadAndPlay(q[idx + 1]);
       };
 
-      await audioRef.current.play();
+      await audio.play();
       setCurrentTrack(track);
       setIsPlaying(true);
     } catch (err) {
@@ -52,21 +67,25 @@ export const PlayerProvider = ({ children }) => {
   };
 
   const seek = (pct) => {
-    if (!audioRef.current) return;
+    if (!audioRef.current || !Number.isFinite(audioRef.current.duration)) return;
     audioRef.current.currentTime = (pct / 100) * audioRef.current.duration;
   };
 
   const playNext = useCallback(() => {
-    if (!currentTrack || queue.length === 0) return;
-    const idx = queue.findIndex((t) => t.id === currentTrack.id);
-    if (idx < queue.length - 1) loadAndPlay(queue[idx + 1]);
-  }, [currentTrack, queue, loadAndPlay]);
+    const q = queueRef.current;
+    const ct = currentTrackRef.current;
+    if (!ct || q.length === 0) return;
+    const idx = q.findIndex((t) => t.id === ct.id);
+    if (idx < q.length - 1) loadAndPlay(q[idx + 1]);
+  }, [loadAndPlay]);
 
   const playPrev = useCallback(() => {
-    if (!currentTrack || queue.length === 0) return;
-    const idx = queue.findIndex((t) => t.id === currentTrack.id);
-    if (idx > 0) loadAndPlay(queue[idx - 1]);
-  }, [currentTrack, queue, loadAndPlay]);
+    const q = queueRef.current;
+    const ct = currentTrackRef.current;
+    if (!ct || q.length === 0) return;
+    const idx = q.findIndex((t) => t.id === ct.id);
+    if (idx > 0) loadAndPlay(q[idx - 1]);
+  }, [loadAndPlay]);
 
   const changeVolume = (v) => {
     setVolume(v);
@@ -84,4 +103,5 @@ export const PlayerProvider = ({ children }) => {
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const usePlayer = () => useContext(PlayerContext);

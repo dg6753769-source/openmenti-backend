@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
@@ -18,7 +17,7 @@ export default function Dashboard() {
     api.get("/analytics/dashboard")
       .then((res) => setData(res.data))
       .catch(() => toast.error("Failed to load dashboard"));
-  }, [user]);
+  }, [user, navigate]);
 
   const handleUpload = async (e) => {
     e.preventDefault();

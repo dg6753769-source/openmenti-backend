@@ -74,7 +74,7 @@ export default function Discover() {
             <p className="text-gray-500">No tracks found</p>
           ) : (
             <div className="grid gap-2">
-              {filteredTracks.map((track, idx) => (
+              {filteredTracks.map((track) => (
                 <div
                   key={track.id}
                   className="flex items-center gap-4 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group cursor-pointer"

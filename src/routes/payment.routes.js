@@ -9,37 +9,38 @@ import { sendSuccess, sendError } from "../utils/response.js";
 
 const router = Router();
 
-// POST /api/payments/create-order — create a Razorpay order for any payment type
+// POST /api/payments/create-order
 router.post("/create-order", authenticate, async (req, res) => {
-  const { type, amount_paise, artist_id, track_id, subscription_id } = req.body;
+  const { type, amount_paise, artist_id, track_id } = req.body;
   const validTypes = ["tip", "vault_unlock", "living_room_sub", "album_purchase"];
 
   if (!validTypes.includes(type)) return sendError(res, 400, "Invalid payment type");
   if (!amount_paise || amount_paise < 100) return sendError(res, 400, "Minimum amount is ₹1 (100 paise)");
-
-  // Idempotency: prevent duplicate orders for same fan+track
-  const idempotencyKey = track_id
-    ? `${req.user.id}-${track_id}`
-    : `${req.user.id}-${type}-${Date.now()}`;
+  if (!artist_id) return sendError(res, 400, "artist_id is required");
 
   const transactionId = uuidv4();
 
-  const order = await razorpay.orders.create({
-    amount: amount_paise,
-    currency: "INR",
-    receipt: transactionId,
-    notes: {
-      transaction_id: transactionId,
-      fan_id: req.user.id,
-      artist_id,
-      track_id,
-      type,
-      platform: "OpenMenti",
-    },
-  });
+  let order;
+  try {
+    order = await razorpay.orders.create({
+      amount: amount_paise,
+      currency: "INR",
+      receipt: transactionId,
+      notes: {
+        transaction_id: transactionId,
+        fan_id: req.user.id,
+        artist_id,
+        track_id: track_id || "",
+        type,
+        platform: "OpenMenti",
+      },
+    });
+  } catch (err) {
+    console.error("[Payment] Razorpay order creation failed:", err.message);
+    return sendError(res, 502, "Payment gateway error. Please try again.");
+  }
 
-  // Record pending transaction
-  await supabase.from("transactions").insert({
+  const { error: dbError } = await supabase.from("transactions").insert({
     id: transactionId,
     fan_id: req.user.id,
     artist_id,
@@ -51,6 +52,11 @@ router.post("/create-order", authenticate, async (req, res) => {
     split_status: "pending",
   });
 
+  if (dbError) {
+    console.error("[Payment] DB insert failed:", dbError.message);
+    return sendError(res, 500, "Failed to record transaction");
+  }
+
   return sendSuccess(res, {
     order_id: order.id,
     transaction_id: transactionId,
@@ -60,15 +66,14 @@ router.post("/create-order", authenticate, async (req, res) => {
   });
 });
 
-// POST /api/payments/webhook — Razorpay payment events (HMAC-verified)
+// POST /api/payments/webhook — Razorpay events (HMAC-verified)
 router.post("/webhook", verifyRazorpayWebhook, async (req, res) => {
   const event = req.body;
 
   if (event.event === "payment.captured") {
     const payment = event.payload.payment.entity;
     const notes = payment.notes;
-
-    const { transactionId: txId, fan_id, artist_id, track_id, type } = notes;
+    const { transaction_id: txId, fan_id, artist_id, track_id, type } = notes;
 
     // Idempotency: skip if already processed
     const { data: existing } = await supabase
@@ -79,30 +84,27 @@ router.post("/webhook", verifyRazorpayWebhook, async (req, res) => {
 
     if (existing?.status === "paid") return res.json({ received: true });
 
-    // Mark transaction paid
     await supabase
       .from("transactions")
       .update({ status: "paid", razorpay_payment_id: payment.id })
       .eq("id", txId);
 
-    // Grant access based on payment type
     if (type === "vault_unlock" && track_id) {
-      await supabase.from("vault_access").insert({ fan_id, track_id, transaction_id: txId });
+      await supabase.from("vault_access").insert({
+        fan_id,
+        track_id,
+        transaction_id: txId,
+      });
     }
 
     if (type === "living_room_sub") {
       const thirtyDays = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      await supabase.from("fan_memberships").upsert({
-        fan_id,
-        artist_id,
-        tier: "living_room",
-        status: "active",
-        current_period_end: thirtyDays,
-        transaction_id: txId,
-      }, { onConflict: "fan_id,artist_id" });
+      await supabase.from("fan_memberships").upsert(
+        { fan_id, artist_id, tier: "living_room", status: "active", current_period_end: thirtyDays, transaction_id: txId },
+        { onConflict: "fan_id,artist_id" }
+      );
     }
 
-    // Execute 90/10 split routing
     const { data: artistProfile } = await supabase
       .from("artist_profiles")
       .select("razorpay_linked_account_id")
@@ -116,9 +118,14 @@ router.post("/webhook", verifyRazorpayWebhook, async (req, res) => {
         amountPaise: payment.amount,
         artistLinkedAccountId: artistProfile.razorpay_linked_account_id,
       });
+    } else {
+      // No linked account yet — mark split as not applicable
+      await supabase
+        .from("transactions")
+        .update({ split_status: "not_applicable" })
+        .eq("id", txId);
     }
 
-    // Emit real-time event via socket (handled in main server)
     req.app.get("io")?.to(`artist:${artist_id}`).emit("payment_received", {
       type,
       amount_paise: payment.amount,
@@ -128,8 +135,6 @@ router.post("/webhook", verifyRazorpayWebhook, async (req, res) => {
 
   if (event.event === "subscription.charged") {
     const sub = event.payload.subscription.entity;
-    const payment = event.payload.payment.entity;
-    // Renew membership period
     const thirtyDays = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     await supabase
       .from("fan_memberships")
@@ -140,7 +145,7 @@ router.post("/webhook", verifyRazorpayWebhook, async (req, res) => {
   return res.json({ received: true });
 });
 
-// GET /api/payments/history — fan's full transaction history
+// GET /api/payments/history
 router.get("/history", authenticate, async (req, res) => {
   const { data, error } = await supabase
     .from("transactions")
