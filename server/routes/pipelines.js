@@ -202,7 +202,7 @@ router.post('/:id/run', authorize('pipelines:run'), auditLog('PIPELINE_RUN', 'Da
           $set: {
             [`runs.${runId}.status`]: 'failed',
             [`runs.${runId}.completedAt`]: new Date(),
-            [`runs.${runId}.errors`]: [err.message],
+            [`runs.${runId}.errorLog`]: [err.message],
             'stats.failedRuns': pipeline.stats.failedRuns + 1
           }
         });

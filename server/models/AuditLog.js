@@ -17,7 +17,7 @@ const auditLogSchema = new mongoose.Schema({
   outcome: { type: String, enum: ['success', 'failure', 'partial'], default: 'success' },
   ipAddress: String,
   userAgent: String,
-  timestamp: { type: Date, default: Date.now, index: true }
+  timestamp: { type: Date, default: Date.now }
 }, { timestamps: false });
 
 // HIPAA requires 6-year retention; index drives TTL-based cleanup at 7 years

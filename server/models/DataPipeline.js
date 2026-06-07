@@ -10,7 +10,7 @@ const pipelineRunSchema = new mongoose.Schema({
   recordsSkipped: { type: Number, default: 0 },
   recordsErrored: { type: Number, default: 0 },
   qualityScoreAvg: Number,
-  errors: [String],
+  errorLog: [String],
   triggeredBy: String
 });
 

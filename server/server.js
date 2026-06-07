@@ -9,6 +9,24 @@ import rateLimit from 'express-rate-limit';
 import { connectDB } from './config/database.js';
 import { setSocketIO } from './services/alertService.js';
 
+// Pre-import all models so they exist before patching
+import User from './models/User.js';
+import Organization from './models/Organization.js';
+import Patient from './models/Patient.js';
+import Provider from './models/Provider.js';
+import Encounter from './models/Encounter.js';
+import Observation from './models/Observation.js';
+import Condition from './models/Condition.js';
+import MedicationRequest from './models/MedicationRequest.js';
+import DataSource from './models/DataSource.js';
+import DataPipeline from './models/DataPipeline.js';
+import AuditLog from './models/AuditLog.js';
+
+const ALL_MODELS = {
+  User, Organization, Patient, Provider, Encounter,
+  Observation, Condition, MedicationRequest, DataSource, DataPipeline, AuditLog
+};
+
 import authRoutes from './routes/auth.js';
 import patientRoutes from './routes/patients.js';
 import providerRoutes from './routes/providers.js';
@@ -126,7 +144,7 @@ io.on('connection', (socket) => {
 // ─── Boot ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 4000;
 
-connectDB().then(() => {
+connectDB(ALL_MODELS).then(() => {
   server.listen(PORT, () => {
     console.log(`
 🏥 HealthBridge Health Data Platform

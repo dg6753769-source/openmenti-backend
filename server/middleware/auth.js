@@ -14,7 +14,8 @@ export const authenticate = async (req, res, next) => {
       return res.status(401).json({ error: 'User not found or inactive' });
     }
     req.user = user;
-    req.orgId = user.organization?._id;
+    // Works whether organization is a populated doc or a bare ObjectId/string
+    req.orgId = user.organization?._id ?? user.organization;
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') return res.status(401).json({ error: 'Token expired' });

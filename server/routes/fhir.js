@@ -19,7 +19,10 @@ import {
 } from '../services/fhirMapper.js';
 
 const router = Router();
-router.use(authenticate);
+router.use((req, res, next) => {
+  if (req.path === '/metadata') return next();
+  return authenticate(req, res, next);
+});
 
 const fhirContent = (req, res, next) => {
   res.setHeader('Content-Type', 'application/fhir+json; charset=utf-8');
