@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
 
-const TABS = ["overview", "tracks", "upload", "living-room"];
+const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
+const MAX_COVER_BYTES = 5 * 1024 * 1024;
+const MAX_LR_BYTES = 200 * 1024 * 1024;
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -12,8 +15,11 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("overview");
   const [tracks, setTracks] = useState([]);
+  const [splits, setSplits] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [deleting, setDeleting] = useState(null);
+  const [retrying, setRetrying] = useState(null);
   const [uploadForm, setUploadForm] = useState({ title: "", description: "", is_vault: false, price_paise: 4900 });
   const [audioFile, setAudioFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
@@ -38,16 +44,45 @@ export default function Dashboard() {
     });
   }, [user]);
 
+  const loadSplits = useCallback(() => {
+    api.get("/payments/splits")
+      .then((res) => setSplits(res.data || []))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (!user || user.role !== "artist") { navigate("/"); return; }
     loadDashboard();
     loadTracks();
-  }, [user, navigate, loadDashboard, loadTracks]);
+    loadSplits();
+  }, [user, navigate, loadDashboard, loadTracks, loadSplits]);
+
+  const handleAudioChange = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > MAX_AUDIO_BYTES) { toast.error("Audio file must be under 50 MB"); e.target.value = ""; return; }
+    setAudioFile(f);
+  };
+
+  const handleCoverChange = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > MAX_COVER_BYTES) { toast.error("Cover image must be under 5 MB"); e.target.value = ""; return; }
+    setCoverFile(f);
+  };
+
+  const handleLrFileChange = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > MAX_LR_BYTES) { toast.error("File must be under 200 MB"); e.target.value = ""; return; }
+    setLrFile(f);
+  };
 
   const handleUpload = async (e) => {
     e.preventDefault();
     if (!audioFile) return toast.error("Select an audio file");
     setUploading(true);
+    setUploadProgress(0);
     try {
       const form = new FormData();
       form.append("audio", audioFile);
@@ -56,11 +91,16 @@ export default function Dashboard() {
       form.append("is_vault", String(uploadForm.is_vault));
       form.append("price_paise", String(uploadForm.price_paise));
       if (coverFile) form.append("cover", coverFile);
-      await api.post("/music/upload", form);
+      await api.post("/music/upload", form, {
+        onUploadProgress: (e) => {
+          if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+        },
+      });
       toast.success("Track uploaded!");
       setAudioFile(null);
       setCoverFile(null);
       setUploadForm({ title: "", description: "", is_vault: false, price_paise: 4900 });
+      setUploadProgress(0);
       loadTracks();
       setTab("tracks");
     } catch (err) {
@@ -81,6 +121,19 @@ export default function Dashboard() {
       toast.error(err || "Delete failed");
     } finally {
       setDeleting(null);
+    }
+  };
+
+  const handleSplitRetry = async (txId) => {
+    setRetrying(txId);
+    try {
+      await api.post(`/payments/splits/${txId}/retry`);
+      toast.success("Split transfer retried");
+      loadSplits();
+    } catch (err) {
+      toast.error(err || "Retry failed");
+    } finally {
+      setRetrying(null);
     }
   };
 
@@ -113,6 +166,7 @@ export default function Dashboard() {
 
   const earningsRs = (data.earnings.total_paise / 100).toFixed(0);
   const revenueRs = (data.earnings.total_revenue_paise / 100).toFixed(0);
+  const failedSplits = splits.filter((s) => s.split_status === "failed");
 
   return (
     <div className="min-h-screen bg-black text-white pt-20 pb-16 px-6">
@@ -131,12 +185,13 @@ export default function Dashboard() {
         </div>
 
         {/* Tab Nav */}
-        <div className="flex gap-1 bg-white/5 p-1 rounded-xl mb-8 w-fit">
+        <div className="flex gap-1 bg-white/5 p-1 rounded-xl mb-8 overflow-x-auto">
           {[
             { id: "overview", label: "Overview" },
             { id: "tracks", label: `Tracks (${tracks.length})` },
             { id: "upload", label: "Upload Track" },
             { id: "living-room", label: "🏠 Living Room" },
+            { id: "splits", label: `Payouts${failedSplits.length > 0 ? ` ⚠️${failedSplits.length}` : ""}` },
           ].map((t) => (
             <button
               key={t.id}
@@ -159,6 +214,44 @@ export default function Dashboard() {
               <StatCard label="Total Streams" value={data.streams.total} sub="all time" color="blue" />
               <StatCard label="Active Members" value={data.fans.active_members} sub="living room" color="green" />
             </div>
+
+            {/* Streams chart */}
+            {data.streams.chart.length > 0 && (
+              <div className="mb-8 bg-white/5 rounded-2xl p-6 border border-white/10">
+                <h2 className="text-lg font-bold mb-4 text-gray-300">Streams — last 30 days</h2>
+                <ResponsiveContainer width="100%" height={180}>
+                  <AreaChart data={data.streams.chart} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="streamGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#7c3aed" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#7c3aed" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fill: "#6b7280", fontSize: 11 }}
+                      tickFormatter={(d) => d.slice(5)}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{ background: "#111", border: "1px solid #333", borderRadius: 8 }}
+                      labelStyle={{ color: "#9ca3af", fontSize: 12 }}
+                      itemStyle={{ color: "#a78bfa" }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="count"
+                      stroke="#7c3aed"
+                      strokeWidth={2}
+                      fill="url(#streamGrad)"
+                      name="streams"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
 
             {Object.keys(data.earnings.by_type).length > 0 && (
               <div className="mb-8">
@@ -281,12 +374,12 @@ export default function Dashboard() {
                 className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
               />
               <div>
-                <label className="text-gray-400 text-sm block mb-1">Audio file * (max 50MB)</label>
-                <input type="file" accept="audio/*" onChange={(e) => setAudioFile(e.target.files[0])} className="w-full text-gray-400 text-sm" />
+                <label className="text-gray-400 text-sm block mb-1">Audio file * (max 50 MB)</label>
+                <input type="file" accept="audio/*" onChange={handleAudioChange} className="w-full text-gray-400 text-sm" />
               </div>
               <div>
-                <label className="text-gray-400 text-sm block mb-1">Cover art (optional)</label>
-                <input type="file" accept="image/*" onChange={(e) => setCoverFile(e.target.files[0])} className="w-full text-gray-400 text-sm" />
+                <label className="text-gray-400 text-sm block mb-1">Cover art (max 5 MB)</label>
+                <input type="file" accept="image/*" onChange={handleCoverChange} className="w-full text-gray-400 text-sm" />
               </div>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
@@ -309,12 +402,26 @@ export default function Dashboard() {
                   />
                 </div>
               )}
+              {uploading && uploadProgress > 0 && (
+                <div>
+                  <div className="flex justify-between text-xs text-gray-400 mb-1">
+                    <span>Uploading...</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-1.5">
+                    <div
+                      className="bg-purple-500 h-1.5 rounded-full transition-all duration-200"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
               <button
                 type="submit"
                 disabled={uploading}
                 className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl transition-colors"
               >
-                {uploading ? "Uploading..." : "Upload Track"}
+                {uploading ? `Uploading${uploadProgress > 0 ? ` ${uploadProgress}%` : "..."}` : "Upload Track"}
               </button>
             </form>
           </div>
@@ -358,8 +465,8 @@ export default function Dashboard() {
                   className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
                 />
                 <div>
-                  <label className="text-gray-400 text-sm block mb-1">Audio/Video file *</label>
-                  <input type="file" accept="audio/*,video/*" onChange={(e) => setLrFile(e.target.files[0])} className="w-full text-gray-400 text-sm" />
+                  <label className="text-gray-400 text-sm block mb-1">Audio/Video file * (max 200 MB)</label>
+                  <input type="file" accept="audio/*,video/*" onChange={handleLrFileChange} className="w-full text-gray-400 text-sm" />
                 </div>
                 <button
                   type="submit"
@@ -372,8 +479,73 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        {/* SPLITS / PAYOUTS TAB */}
+        {tab === "splits" && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">Payout Splits</h2>
+              <button onClick={loadSplits} className="text-gray-400 hover:text-white text-sm transition-colors">↻ Refresh</button>
+            </div>
+            {failedSplits.length > 0 && (
+              <div className="mb-4 p-4 bg-red-900/30 border border-red-500/30 rounded-xl">
+                <p className="text-red-300 text-sm font-medium">
+                  ⚠️ {failedSplits.length} payout{failedSplits.length > 1 ? "s" : ""} failed — retry below
+                </p>
+              </div>
+            )}
+            {splits.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <div className="text-4xl mb-3">💸</div>
+                <p>No payout history yet</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {splits.map((tx) => (
+                  <div key={tx.id} className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
+                    <div>
+                      <p className="text-gray-400 text-xs capitalize">{tx.type.replace(/_/g, " ")}</p>
+                      <p className="text-white text-sm font-medium mt-0.5">
+                        +₹{((tx.artist_payout_paise || 0) / 100).toFixed(0)}
+                        <span className="text-gray-500 text-xs ml-1">of ₹{(tx.amount_paise / 100).toFixed(0)}</span>
+                      </p>
+                      <p className="text-gray-600 text-xs">{new Date(tx.created_at).toLocaleDateString("en-IN")}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <SplitStatusBadge status={tx.split_status} />
+                      {tx.split_status === "failed" && (
+                        <button
+                          onClick={() => handleSplitRetry(tx.id)}
+                          disabled={retrying === tx.id}
+                          className="text-xs px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/40 border border-orange-500/40 text-orange-300 rounded-full transition-colors disabled:opacity-50"
+                        >
+                          {retrying === tx.id ? "Retrying..." : "Retry"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function SplitStatusBadge({ status }) {
+  const styles = {
+    routed: "text-green-400 bg-green-500/20",
+    pending: "text-yellow-400 bg-yellow-500/20",
+    failed: "text-red-400 bg-red-500/20",
+    not_applicable: "text-gray-400 bg-white/10",
+  };
+  const labels = { routed: "Paid", pending: "Pending", failed: "Failed", not_applicable: "N/A" };
+  return (
+    <span className={`text-xs px-2 py-1 rounded-full font-medium ${styles[status] || styles.pending}`}>
+      {labels[status] || status}
+    </span>
   );
 }
 

@@ -15,6 +15,7 @@ export default function ArtistSetup() {
     living_room_price_paise: 19900,
     living_room_description: "",
   });
+  const [socialLinks, setSocialLinks] = useState({ instagram: "", twitter: "", spotify: "", youtube: "" });
   const [razorpayAccountId, setRazorpayAccountId] = useState("");
 
   useEffect(() => {
@@ -25,9 +26,13 @@ export default function ArtistSetup() {
     e.preventDefault();
     setSaving(true);
     try {
+      const social_links = Object.fromEntries(
+        Object.entries(socialLinks).filter(([, v]) => v.trim())
+      );
       await api.patch("/artists/profile", {
         ...profile,
         living_room_price_paise: Number(profile.living_room_price_paise),
+        social_links,
       });
       toast.success("Profile saved!");
       setStep(2);
@@ -127,6 +132,29 @@ export default function ArtistSetup() {
                       className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
                     />
                   </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-white/5 rounded-xl border border-white/10">
+                <h3 className="text-white font-bold mb-3 text-sm">Social Links (optional)</h3>
+                <div className="space-y-2">
+                  {[
+                    { key: "instagram", placeholder: "Instagram username", prefix: "@" },
+                    { key: "twitter", placeholder: "Twitter / X username", prefix: "@" },
+                    { key: "spotify", placeholder: "Spotify artist URL" },
+                    { key: "youtube", placeholder: "YouTube channel URL" },
+                  ].map(({ key, placeholder, prefix }) => (
+                    <div key={key} className="flex items-center gap-2">
+                      {prefix && <span className="text-gray-500 text-sm w-4">{prefix}</span>}
+                      <input
+                        type="text"
+                        placeholder={placeholder}
+                        value={socialLinks[key]}
+                        onChange={(e) => setSocialLinks({ ...socialLinks, [key]: e.target.value })}
+                        className="flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm"
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
 

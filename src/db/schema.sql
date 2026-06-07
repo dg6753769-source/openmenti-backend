@@ -86,8 +86,8 @@ CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
 -- ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS vault_access (
   id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  fan_id         UUID NOT NULL REFERENCES users(id),
-  track_id       UUID NOT NULL REFERENCES tracks(id),
+  fan_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  track_id       UUID NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
   transaction_id UUID REFERENCES transactions(id),
   granted_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at     TIMESTAMPTZ,            -- NULL = permanent access
@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS vault_access (
 );
 
 CREATE INDEX IF NOT EXISTS idx_vault_access_fan ON vault_access(fan_id);
+CREATE INDEX IF NOT EXISTS idx_vault_access_track ON vault_access(track_id, fan_id);
 
 -- ─────────────────────────────────────────────
 -- FAN MEMBERSHIPS (living room subscriptions)
@@ -112,12 +113,15 @@ CREATE TABLE IF NOT EXISTS fan_memberships (
   UNIQUE(fan_id, artist_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_fan_memberships_lookup ON fan_memberships(fan_id, artist_id, status);
+CREATE INDEX IF NOT EXISTS idx_fan_memberships_artist ON fan_memberships(artist_id, status);
+
 -- ─────────────────────────────────────────────
 -- FAN FOLLOWS
 -- ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS fan_follows (
-  fan_id      UUID NOT NULL REFERENCES users(id),
-  artist_id   UUID NOT NULL REFERENCES artist_profiles(id),
+  fan_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  artist_id   UUID NOT NULL REFERENCES artist_profiles(id) ON DELETE CASCADE,
   followed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (fan_id, artist_id)
 );

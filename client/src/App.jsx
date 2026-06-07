@@ -4,6 +4,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { PlayerProvider } from "./context/PlayerContext";
 import { ModeProvider } from "./context/ModeContext";
 import Navbar from "./components/common/Navbar";
+import ErrorBoundary from "./components/common/ErrorBoundary";
 import AudioPlayer from "./components/player/AudioPlayer";
 import VaultOverlay from "./components/vault/VaultOverlay";
 import Home from "./pages/Home";
@@ -21,6 +22,7 @@ export default function App() {
       <AuthProvider>
         <PlayerProvider>
           <ModeProvider>
+            <ErrorBoundary>
             <div className="bg-black min-h-screen">
               <Navbar />
               <Routes>
@@ -52,6 +54,7 @@ export default function App() {
                 }}
               />
             </div>
+            </ErrorBoundary>
           </ModeProvider>
         </PlayerProvider>
       </AuthProvider>

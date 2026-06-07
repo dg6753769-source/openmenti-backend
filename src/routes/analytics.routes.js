@@ -1,11 +1,13 @@
 import { Router } from "express";
 import supabase from "../config/supabase.js";
 import { authenticate, requireRole } from "../middleware/auth.js";
+import { globalLimiter } from "../middleware/rateLimiter.js";
 import { sendSuccess, sendError } from "../utils/response.js";
+import { PAGINATION } from "../config/constants.js";
 
 const router = Router();
 
-// GET /api/analytics/dashboard — artist's full dashboard data
+// GET /api/analytics/dashboard — full artist dashboard data
 router.get("/dashboard", authenticate, requireRole("artist"), async (req, res) => {
   const { data: profile } = await supabase
     .from("artist_profiles")
@@ -18,7 +20,7 @@ router.get("/dashboard", authenticate, requireRole("artist"), async (req, res) =
   const artistId = profile.id;
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Fetch artist's track IDs first — Supabase JS v2 does not accept builder objects in .in()
+  // Fetch artist track IDs first (Supabase JS v2 doesn't support subquery in .in())
   const { data: artistTracks } = await supabase
     .from("tracks")
     .select("id")
@@ -60,7 +62,6 @@ router.get("/dashboard", authenticate, requireRole("artist"), async (req, res) =
       .order("play_count", { ascending: false })
       .limit(5),
 
-    // fan_id FK must be explicitly named so PostgREST picks the right users join
     supabase
       .from("transactions")
       .select("id, type, amount_paise, artist_payout_paise, status, created_at, users!fan_id(name)")
@@ -79,6 +80,17 @@ router.get("/dashboard", authenticate, requireRole("artist"), async (req, res) =
     return acc;
   }, {});
 
+  // Group stream events by date for chart (last 30 days)
+  const streamsByDay = (streamsResult.data || []).reduce((acc, ev) => {
+    const day = ev.created_at.slice(0, 10);
+    acc[day] = (acc[day] || 0) + 1;
+    return acc;
+  }, {});
+
+  const streamChart = Object.entries(streamsByDay)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, count]) => ({ date, count }));
+
   return sendSuccess(res, {
     earnings: {
       total_paise: totalEarningsPaise,
@@ -88,7 +100,7 @@ router.get("/dashboard", authenticate, requireRole("artist"), async (req, res) =
     },
     streams: {
       total: streamsResult.data?.length || 0,
-      last_30_days: streamsResult.data || [],
+      chart: streamChart,
     },
     fans: {
       active_members: fansResult.data?.length || 0,
@@ -98,12 +110,20 @@ router.get("/dashboard", authenticate, requireRole("artist"), async (req, res) =
   });
 });
 
-// POST /api/analytics/event — client-side stream event ingestion
-router.post("/event", async (req, res) => {
+// POST /api/analytics/event — stream event ingestion (rate-limited, auth optional)
+router.post("/event", globalLimiter, async (req, res) => {
   const { track_id, type, duration_seconds } = req.body;
-  if (!track_id || !type) return sendError(res, 400, "track_id and type are required");
+  const validTypes = ["play", "skip", "complete", "vault_play"];
 
-  await supabase.from("stream_events").insert({ track_id, type, duration_seconds });
+  if (!track_id || !type) return sendError(res, 400, "track_id and type are required");
+  if (!validTypes.includes(type)) return sendError(res, 400, "Invalid event type");
+
+  await supabase.from("stream_events").insert({
+    track_id,
+    type,
+    duration_seconds: duration_seconds ? Number(duration_seconds) : null,
+  });
+
   return sendSuccess(res, { recorded: true });
 });
 

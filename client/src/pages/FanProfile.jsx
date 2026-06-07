@@ -12,6 +12,7 @@ export default function FanProfile() {
   const [purchases, setPurchases] = useState([]);
   const [following, setFollowing] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [cancelling, setCancelling] = useState(null);
 
   useEffect(() => {
     if (!user) { navigate("/login"); return; }
@@ -29,6 +30,22 @@ export default function FanProfile() {
   }, [user, navigate]);
 
   const handleLogout = () => { logout(); navigate("/"); };
+
+  const handleCancelMembership = async (artistId) => {
+    if (!window.confirm("Cancel membership? You'll keep access until the end of the current period.")) return;
+    setCancelling(artistId);
+    try {
+      await api.delete(`/fan/memberships/${artistId}`);
+      toast.success("Membership cancelled — access continues until period end");
+      setMemberships((prev) => prev.map((m) =>
+        m.artist_profiles?.id === artistId ? { ...m, status: "cancelled" } : m
+      ));
+    } catch (err) {
+      toast.error(err || "Failed to cancel");
+    } finally {
+      setCancelling(null);
+    }
+  };
 
   const tabs = [
     { id: "memberships", label: "🏠 Living Rooms" },
@@ -107,11 +124,24 @@ export default function FanProfile() {
                         <p className="text-gray-500 text-xs">Living Room · {m.tier}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span className="text-green-400 text-xs font-medium">Active</span>
-                      <p className="text-gray-600 text-xs">
-                        Until {new Date(m.current_period_end).toLocaleDateString("en-IN")}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <span className={`text-xs font-medium ${m.status === "cancelled" ? "text-gray-400" : "text-green-400"}`}>
+                          {m.status === "cancelled" ? "Cancelled" : "Active"}
+                        </span>
+                        <p className="text-gray-600 text-xs">
+                          Until {new Date(m.current_period_end).toLocaleDateString("en-IN")}
+                        </p>
+                      </div>
+                      {m.status === "active" && (
+                        <button
+                          onClick={() => handleCancelMembership(m.artist_profiles?.id)}
+                          disabled={cancelling === m.artist_profiles?.id}
+                          className="text-xs px-3 py-1.5 border border-red-500/30 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-full transition-colors disabled:opacity-50"
+                        >
+                          {cancelling === m.artist_profiles?.id ? "..." : "Cancel"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

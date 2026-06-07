@@ -11,9 +11,10 @@ export const PlayerProvider = ({ children }) => {
   const [queue, setQueue] = useState([]);
   const audioRef = useRef(null);
 
-  // Ref always points to latest queue + currentTrack — avoids stale closures in audio callbacks
+  // Refs always track latest values — avoids stale closures in all audio callbacks
   const queueRef = useRef(queue);
   const currentTrackRef = useRef(currentTrack);
+  const volumeRef = useRef(0.8);
   useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
 
@@ -29,7 +30,7 @@ export const PlayerProvider = ({ children }) => {
       }
 
       const audio = new Audio(url);
-      audio.volume = volume;
+      audio.volume = volumeRef.current; // use ref, not stale closure over state
       audioRef.current = audio;
 
       audio.ontimeupdate = () => {
@@ -53,7 +54,7 @@ export const PlayerProvider = ({ children }) => {
     } catch (err) {
       console.error("Playback failed:", err);
     }
-  }, [volume]);
+  }, []);
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -88,6 +89,7 @@ export const PlayerProvider = ({ children }) => {
   }, [loadAndPlay]);
 
   const changeVolume = (v) => {
+    volumeRef.current = v;
     setVolume(v);
     if (audioRef.current) audioRef.current.volume = v;
   };

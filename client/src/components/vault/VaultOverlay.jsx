@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useMode } from "../../context/ModeContext";
 import { useAuth } from "../../context/AuthContext";
 import api from "../../services/api";
@@ -14,26 +14,27 @@ export default function VaultOverlay() {
   const [paymentType, setPaymentType] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  const fetchVaultData = useCallback(async () => {
+    if (!vaultArtist) return;
+    setLoading(true);
+    try {
+      const [tracksRes, membershipRes] = await Promise.all([
+        api.get(`/commerce/vault/${vaultArtist.id}`),
+        user ? api.get(`/commerce/living-room/${vaultArtist.id}/membership`) : Promise.resolve({ data: null }),
+      ]);
+      setVaultTracks(tracksRes.data || []);
+      setMembership(membershipRes.data);
+    } catch {
+      toast.error("Failed to load vault content");
+    } finally {
+      setLoading(false);
+    }
+  }, [vaultArtist, user]);
+
   useEffect(() => {
     if (mode !== "vault" || !vaultArtist) return;
-
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [tracksRes, membershipRes] = await Promise.all([
-          api.get(`/commerce/vault/${vaultArtist.id}`),
-          user ? api.get(`/commerce/living-room/${vaultArtist.id}/membership`) : Promise.resolve({ data: null }),
-        ]);
-        setVaultTracks(tracksRes.data || []);
-        setMembership(membershipRes.data);
-      } catch {
-        toast.error("Failed to load vault content");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [mode, vaultArtist, user]);
+    fetchVaultData();
+  }, [mode, vaultArtist, fetchVaultData]);
 
   if (mode !== "vault") return null;
 
@@ -137,6 +138,7 @@ export default function VaultOverlay() {
             toast.success("Payment successful! Access granted.");
             setPaymentType(null);
             setSelectedTrack(null);
+            fetchVaultData();
           }}
         />
       )}

@@ -1,12 +1,10 @@
 import razorpay from "../config/razorpay.js";
 import supabase from "../config/supabase.js";
-
-const PLATFORM_FEE_PERCENT = Number(process.env.PLATFORM_FEE_PERCENT) || 10;
+import { PLATFORM_FEE_PERCENT } from "../config/constants.js";
 
 /**
- * Triggers Razorpay Route transfer after a confirmed payment.
- * Routes (100 - PLATFORM_FEE_PERCENT)% directly to the artist's linked account.
- * Updates the transaction split_status in the DB.
+ * Routes (100 - PLATFORM_FEE_PERCENT)% of the payment directly to the artist's
+ * Razorpay linked account. Updates split_status in transactions table.
  */
 export const executeSplit = async ({ transactionId, paymentId, amountPaise, artistLinkedAccountId }) => {
   const artistSharePaise = Math.floor(amountPaise * ((100 - PLATFORM_FEE_PERCENT) / 100));
@@ -41,7 +39,38 @@ export const executeSplit = async ({ transactionId, paymentId, amountPaise, arti
       .update({ split_status: "failed", split_error: err.message })
       .eq("id", transactionId);
 
-    console.error("[SplitRouter] Transfer failed:", err.message);
+    console.error("[SplitRouter] Transfer failed for tx:", transactionId, err.message);
     return { success: false, error: err.message };
   }
+};
+
+/**
+ * Retries a previously failed split. Can be triggered manually by admin or artist.
+ */
+export const retrySplit = async (transactionId) => {
+  const { data: tx } = await supabase
+    .from("transactions")
+    .select("id, razorpay_payment_id, amount_paise, artist_id, split_status")
+    .eq("id", transactionId)
+    .single();
+
+  if (!tx) return { success: false, error: "Transaction not found" };
+  if (tx.split_status === "routed") return { success: false, error: "Already routed" };
+
+  const { data: profile } = await supabase
+    .from("artist_profiles")
+    .select("razorpay_linked_account_id")
+    .eq("id", tx.artist_id)
+    .single();
+
+  if (!profile?.razorpay_linked_account_id) {
+    return { success: false, error: "Artist has no linked Razorpay account" };
+  }
+
+  return executeSplit({
+    transactionId: tx.id,
+    paymentId: tx.razorpay_payment_id,
+    amountPaise: tx.amount_paise,
+    artistLinkedAccountId: profile.razorpay_linked_account_id,
+  });
 };

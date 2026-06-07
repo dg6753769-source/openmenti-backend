@@ -1,4 +1,7 @@
 import "dotenv/config";
+import { validateEnv } from "./src/config/validateEnv.js";
+validateEnv(); // Fail fast if any required env var is missing
+
 import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
@@ -17,16 +20,30 @@ import fanRoutes from "./src/routes/fan.routes.js";
 const app = express();
 const httpServer = createServer(app);
 
+const allowedOrigins = process.env.FRONTEND_URL
+  ? [process.env.FRONTEND_URL]
+  : ["http://localhost:5173", "http://localhost:3000"];
+
+const corsOptions = {
+  origin: (origin, cb) => {
+    // Allow requests with no origin (curl, Postman, mobile apps in dev)
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+};
+
 const io = new Server(httpServer, {
-  cors: { origin: process.env.FRONTEND_URL || "*", methods: ["GET", "POST"] },
+  cors: { origin: allowedOrigins, methods: ["GET", "POST"] },
 });
 
 app.set("io", io);
-
-app.use(cors({ origin: process.env.FRONTEND_URL || "*" }));
+app.use(cors(corsOptions));
 app.use(globalLimiter);
 
-// Webhook: capture raw body string for HMAC verification BEFORE json parsing
+// Webhook: preserve raw body string for HMAC verification before JSON parse
 app.use("/api/payments/webhook", express.raw({ type: "application/json" }), (req, res, next) => {
   req.rawBody = req.body.toString("utf8");
   req.body = JSON.parse(req.rawBody);
@@ -43,7 +60,9 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/fan", fanRoutes);
 
-app.get("/health", (req, res) => res.json({ status: "ok", platform: "OpenMenti Music" }));
+app.get("/health", (req, res) =>
+  res.json({ status: "ok", platform: "OpenMenti Music", env: process.env.NODE_ENV })
+);
 
 app.use(errorHandler);
 
@@ -55,5 +74,5 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 4000;
 httpServer.listen(PORT, () => {
-  console.log(`OpenMenti Music Platform running on port ${PORT}`);
+  console.log(`OpenMenti Music Platform running on port ${PORT} [${process.env.NODE_ENV || "development"}]`);
 });

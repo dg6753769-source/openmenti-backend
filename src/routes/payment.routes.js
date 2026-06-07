@@ -2,10 +2,10 @@ import { Router } from "express";
 import { v4 as uuidv4 } from "uuid";
 import razorpay from "../config/razorpay.js";
 import supabase from "../config/supabase.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, requireRole } from "../middleware/auth.js";
 import { paymentLimiter } from "../middleware/rateLimiter.js";
 import { verifyRazorpayWebhook } from "../middleware/webhookVerify.js";
-import { executeSplit } from "../utils/splitRouter.js";
+import { executeSplit, retrySplit } from "../utils/splitRouter.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const router = Router();
@@ -156,6 +156,52 @@ router.get("/history", authenticate, async (req, res) => {
 
   if (error) return sendError(res, 500, error.message);
   return sendSuccess(res, data);
+});
+
+// GET /api/payments/splits — artist's payout split history
+router.get("/splits", authenticate, requireRole("artist"), async (req, res) => {
+  const { data: profile } = await supabase
+    .from("artist_profiles")
+    .select("id")
+    .eq("user_id", req.user.id)
+    .single();
+
+  if (!profile) return sendError(res, 404, "Artist profile not found");
+
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("id, type, amount_paise, artist_payout_paise, platform_fee_paise, split_status, split_error, razorpay_transfer_id, created_at")
+    .eq("artist_id", profile.id)
+    .eq("status", "paid")
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) return sendError(res, 500, error.message);
+  return sendSuccess(res, data);
+});
+
+// POST /api/payments/splits/:transactionId/retry — retry a failed split transfer
+router.post("/splits/:transactionId/retry", authenticate, requireRole("artist"), async (req, res) => {
+  // Verify this transaction belongs to the requesting artist
+  const { data: profile } = await supabase
+    .from("artist_profiles")
+    .select("id")
+    .eq("user_id", req.user.id)
+    .single();
+
+  const { data: tx } = await supabase
+    .from("transactions")
+    .select("id, artist_id, split_status")
+    .eq("id", req.params.transactionId)
+    .single();
+
+  if (!tx) return sendError(res, 404, "Transaction not found");
+  if (tx.artist_id !== profile.id) return sendError(res, 403, "Not your transaction");
+  if (tx.split_status !== "failed") return sendError(res, 400, `Split status is '${tx.split_status}', not failed`);
+
+  const result = await retrySplit(req.params.transactionId);
+  if (!result.success) return sendError(res, 502, result.error);
+  return sendSuccess(res, { retried: true });
 });
 
 export default router;

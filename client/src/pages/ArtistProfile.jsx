@@ -79,7 +79,36 @@ export default function ArtistProfile() {
       <div className="px-8 mt-8">
         {/* Bio */}
         {artist.bio && (
-          <p className="text-gray-400 max-w-2xl mb-8 leading-relaxed">{artist.bio}</p>
+          <p className="text-gray-400 max-w-2xl mb-6 leading-relaxed">{artist.bio}</p>
+        )}
+
+        {/* Social links */}
+        {artist.social_links && Object.keys(artist.social_links).length > 0 && (
+          <div className="flex gap-3 mb-8 flex-wrap">
+            {Object.entries(artist.social_links).map(([platform, handle]) => {
+              if (!handle) return null;
+              const cfg = {
+                instagram: { label: "Instagram", icon: "📷", href: `https://instagram.com/${handle.replace(/^@/, "")}` },
+                twitter:   { label: "Twitter",   icon: "𝕏",   href: `https://twitter.com/${handle.replace(/^@/, "")}` },
+                spotify:   { label: "Spotify",   icon: "🎧",  href: handle.startsWith("http") ? handle : `https://open.spotify.com/artist/${handle}` },
+                youtube:   { label: "YouTube",   icon: "▶️",  href: handle.startsWith("http") ? handle : `https://youtube.com/${handle}` },
+              };
+              const info = cfg[platform];
+              if (!info) return null;
+              return (
+                <a
+                  key={platform}
+                  href={info.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-sm text-gray-300 hover:text-white transition-colors"
+                >
+                  <span>{info.icon}</span>
+                  <span>{info.label}</span>
+                </a>
+              );
+            })}
+          </div>
         )}
 
         {/* Living Room teaser */}
