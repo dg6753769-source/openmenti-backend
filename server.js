@@ -1,58 +1,65 @@
+import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 
+import { errorHandler } from "./src/middleware/errorHandler.js";
+import authRoutes from "./src/routes/auth.routes.js";
+import artistRoutes from "./src/routes/artist.routes.js";
+import musicRoutes from "./src/routes/music.routes.js";
+import commerceRoutes from "./src/routes/commerce.routes.js";
+import paymentRoutes from "./src/routes/payment.routes.js";
+import analyticsRoutes from "./src/routes/analytics.routes.js";
+import fanRoutes from "./src/routes/fan.routes.js";
+
 const app = express();
-const server = createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
+const httpServer = createServer(app);
+
+const io = new Server(httpServer, {
+  cors: { origin: process.env.FRONTEND_URL || "*", methods: ["GET", "POST"] },
 });
 
-app.use(cors());
+// Make io accessible to route handlers (used in payment webhook)
+app.set("io", io);
+
+app.use(cors({ origin: process.env.FRONTEND_URL || "*" }));
+
+// Webhook route needs raw body for HMAC verification — must be before express.json()
+app.use("/api/payments/webhook", express.raw({ type: "application/json" }), (req, res, next) => {
+  req.body = JSON.parse(req.body.toString());
+  next();
+});
+
 app.use(express.json());
 
-const sessions = {};
+// API routes
+app.use("/api/auth", authRoutes);
+app.use("/api/artists", artistRoutes);
+app.use("/api/music", musicRoutes);
+app.use("/api/commerce", commerceRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/analytics", analyticsRoutes);
+app.use("/api/fan", fanRoutes);
 
+app.get("/health", (req, res) => res.json({ status: "ok", platform: "OpenMenti Music" }));
+
+app.use(errorHandler);
+
+// WebSocket: artists join a private room to receive real-time payment notifications
 io.on("connection", (socket) => {
-  console.log("✅ User connected:", socket.id);
-
-  // host creates a session
-  socket.on("create_session", (code) => {
-    sessions[code] = { hostId: socket.id, question: null, responses: [] };
-    socket.join(code);
-    console.log("📡 Session created:", code);
+  socket.on("join_artist_room", (artistId) => {
+    socket.join(`artist:${artistId}`);
   });
 
-  // participant joins
-  socket.on("join_session", (code) => {
-    if (sessions[code]) {
-      socket.join(code);
-      io.to(sessions[code].hostId).emit("participant_joined", socket.id);
-      console.log("👥 Participant joined:", code);
-    }
+  socket.on("join_fan_room", (fanId) => {
+    socket.join(`fan:${fanId}`);
   });
 
-  // host sends question
-  socket.on("send_question", ({ code, question, options }) => {
-    if (sessions[code]) {
-      sessions[code].question = { question, options, votes: Array(options.length).fill(0) };
-      io.to(code).emit("new_question", sessions[code].question);
-      console.log("❓ Question sent:", question);
-    }
-  });
-
-  // participant submits answer
-  socket.on("submit_answer", ({ code, optionIndex }) => {
-    if (sessions[code]) {
-      sessions[code].question.votes[optionIndex]++;
-      io.to(code).emit("update_results", sessions[code].question.votes);
-    }
-  });
-
-  socket.on("disconnect", () => console.log("🚪 Disconnected:", socket.id));
+  socket.on("disconnect", () => {});
 });
 
-app.get("/", (req, res) => res.send("✅ OpenMenti backend with live questions running!"));
-
-server.listen(4000, () => console.log("🚀 Server running on port 4000"));
+const PORT = process.env.PORT || 4000;
+httpServer.listen(PORT, () => {
+  console.log(`OpenMenti Music Platform running on port ${PORT}`);
+});
