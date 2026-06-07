@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import supabase from "../config/supabase.js";
 import { authenticate } from "../middleware/auth.js";
+import { authLimiter } from "../middleware/rateLimiter.js";
+import { validateAuth } from "../middleware/validate.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const router = Router();
@@ -15,7 +17,7 @@ const signToken = (user) =>
   );
 
 // POST /api/auth/register
-router.post("/register", async (req, res) => {
+router.post("/register", authLimiter, validateAuth, async (req, res) => {
   const { email, password, name, role = "fan" } = req.body;
   if (!email || !password || !name) {
     return sendError(res, 400, "email, password, and name are required");
@@ -45,7 +47,7 @@ router.post("/register", async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post("/login", async (req, res) => {
+router.post("/login", authLimiter, validateAuth, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return sendError(res, 400, "email and password are required");
 

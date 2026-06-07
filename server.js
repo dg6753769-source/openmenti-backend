@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import cors from "cors";
 
 import { errorHandler } from "./src/middleware/errorHandler.js";
+import { globalLimiter } from "./src/middleware/rateLimiter.js";
 import authRoutes from "./src/routes/auth.routes.js";
 import artistRoutes from "./src/routes/artist.routes.js";
 import musicRoutes from "./src/routes/music.routes.js";
@@ -20,20 +21,20 @@ const io = new Server(httpServer, {
   cors: { origin: process.env.FRONTEND_URL || "*", methods: ["GET", "POST"] },
 });
 
-// Make io accessible to route handlers (used in payment webhook)
 app.set("io", io);
 
 app.use(cors({ origin: process.env.FRONTEND_URL || "*" }));
+app.use(globalLimiter);
 
-// Webhook route needs raw body for HMAC verification — must be before express.json()
+// Webhook: capture raw body string for HMAC verification BEFORE json parsing
 app.use("/api/payments/webhook", express.raw({ type: "application/json" }), (req, res, next) => {
-  req.body = JSON.parse(req.body.toString());
+  req.rawBody = req.body.toString("utf8");
+  req.body = JSON.parse(req.rawBody);
   next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
-// API routes
 app.use("/api/auth", authRoutes);
 app.use("/api/artists", artistRoutes);
 app.use("/api/music", musicRoutes);
@@ -46,16 +47,9 @@ app.get("/health", (req, res) => res.json({ status: "ok", platform: "OpenMenti M
 
 app.use(errorHandler);
 
-// WebSocket: artists join a private room to receive real-time payment notifications
 io.on("connection", (socket) => {
-  socket.on("join_artist_room", (artistId) => {
-    socket.join(`artist:${artistId}`);
-  });
-
-  socket.on("join_fan_room", (fanId) => {
-    socket.join(`fan:${fanId}`);
-  });
-
+  socket.on("join_artist_room", (artistId) => socket.join(`artist:${artistId}`));
+  socket.on("join_fan_room", (fanId) => socket.join(`fan:${fanId}`));
   socket.on("disconnect", () => {});
 });
 

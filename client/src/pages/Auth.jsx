@@ -24,7 +24,7 @@ export default function Auth({ mode = "login" }) {
       if (isRegister) {
         const user = await register(form.name, form.email, form.password, form.role);
         toast.success(`Welcome, ${user.name}!`);
-        navigate(user.role === "artist" ? "/dashboard" : "/discover");
+        navigate(user.role === "artist" ? "/setup" : "/discover");
       } else {
         const user = await login(form.email, form.password);
         toast.success(`Welcome back!`);

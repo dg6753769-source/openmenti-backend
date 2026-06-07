@@ -16,22 +16,30 @@ export default function Navbar() {
         <span className="text-2xl font-black bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
           OpenMenti
         </span>
-        <span className="text-xs text-gray-500 font-medium">for artists</span>
+        <span className="text-xs text-gray-500 font-medium hidden sm:block">for artists</span>
       </Link>
 
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-5">
         <Link to="/discover" className="text-gray-400 hover:text-white transition-colors text-sm">
           Discover
         </Link>
 
         {user ? (
           <>
-            {user.role === "artist" && (
-              <Link to="/dashboard" className="text-gray-400 hover:text-white transition-colors text-sm">
-                Dashboard
+            {user.role === "artist" ? (
+              <>
+                <Link to="/dashboard" className="text-gray-400 hover:text-white transition-colors text-sm">
+                  Dashboard
+                </Link>
+                <Link to="/setup" className="text-gray-400 hover:text-white transition-colors text-sm">
+                  Profile
+                </Link>
+              </>
+            ) : (
+              <Link to="/profile" className="text-gray-400 hover:text-white transition-colors text-sm">
+                My Library
               </Link>
             )}
-            <span className="text-gray-400 text-sm">{user.name}</span>
             <button
               onClick={handleLogout}
               className="text-sm text-gray-500 hover:text-white transition-colors"

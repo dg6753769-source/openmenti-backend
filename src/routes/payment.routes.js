@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import razorpay from "../config/razorpay.js";
 import supabase from "../config/supabase.js";
 import { authenticate } from "../middleware/auth.js";
+import { paymentLimiter } from "../middleware/rateLimiter.js";
 import { verifyRazorpayWebhook } from "../middleware/webhookVerify.js";
 import { executeSplit } from "../utils/splitRouter.js";
 import { sendSuccess, sendError } from "../utils/response.js";
@@ -10,7 +11,7 @@ import { sendSuccess, sendError } from "../utils/response.js";
 const router = Router();
 
 // POST /api/payments/create-order
-router.post("/create-order", authenticate, async (req, res) => {
+router.post("/create-order", authenticate, paymentLimiter, async (req, res) => {
   const { type, amount_paise, artist_id, track_id } = req.body;
   const validTypes = ["tip", "vault_unlock", "living_room_sub", "album_purchase"];
 
