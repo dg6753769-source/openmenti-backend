@@ -11,9 +11,11 @@
     <Compile Include="src/Domain.fs" />
     <Compile Include="src/Astronomy.fs" />
     <Compile Include="src/VimshottariDasha.fs" />
+    <Compile Include="src/Lagna.fs" />
     <Compile Include="src/ClassicalSources.fs" />
     <Compile Include="src/RuleMatrix.fs" />
     <Compile Include="src/Engine.fs" />
+    <Compile Include="src/Api.fs" />
   </ItemGroup>
 
 </Project>
