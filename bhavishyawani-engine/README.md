@@ -148,9 +148,37 @@ switch (reading.status) {
 }
 ```
 
+## Quick start — test the product
+
+The repository ships a compiled build (`dist/`, produced by the standalone
+Fable compiler, with the Fable runtime library bundled — no dotnet and no
+npm dependencies required to run it):
+
+```bash
+cd bhavishyawani-engine
+npm test    # runs tests/functional-test.mjs against dist/
+```
+
+The suite (25 assertions) exercises the happy path (exact timeline, ≥2
+systems per event, citations, ISO dates, past/future split, lagna-backed
+maraka windows), determinism, every refusal path (empty palm, polar
+latitude, uncalibrated year), and per-field input validation.
+
+To consume it from the Node backend:
+
+```js
+import { Api_evaluate } from "./bhavishyawani-engine/dist/src/Api.js";
+const reading = Api_evaluate({ /* UserMetricsDto, see below */ });
+```
+
 ## Verification
 
-Two independent harnesses:
+Three independent harnesses:
+
+- `tests/functional-test.mjs` — end-to-end functional tests against the
+  Fable-compiled engine (see Quick start). The F# sources were compiled with
+  the real F# compiler service (via `@fable-org/fable-compiler-js`) with
+  zero errors.
 
 - `tests/KernelChecks.fsx` — run `dotnet fsi tests/KernelChecks.fsx`. Asserts
   the astronomical kernel against Meeus worked examples (Julian Day, lunar
@@ -165,24 +193,24 @@ Two independent harnesses:
   Meeus ch. 12 to 5 decimals; ascendant identities at the equator exact and
   the ascendant sweeping a monotonic 360°/day.
 
-*This project was authored in an environment without the .NET SDK installed,
-so the F# itself has not been compile-verified — run `dotnet build` and
-`dotnet fsi tests/KernelChecks.fsx` once before first use.*
-
 ## Building
 
-.NET (type-check / library build):
+Rebuild `dist/` after changing the F# sources. Without a .NET SDK (the
+standalone compiler runs the F# compiler inside Node):
 
 ```bash
-dotnet build bhavishyawani-engine/Bhavishyawani.fsproj
+cd bhavishyawani-engine
+npm run build   # npx @fable-org/fable-compiler-js Bhavishyawani.fsproj dist --fableLib ./dist/fable-library
+npm test
 ```
 
-Fable (JavaScript output):
+With a .NET SDK (full toolchain):
 
 ```bash
+dotnet build bhavishyawani-engine/Bhavishyawani.fsproj   # type-check / library build
+dotnet fsi bhavishyawani-engine/tests/KernelChecks.fsx    # F#-side verification
 dotnet tool install --global fable
-cd bhavishyawani-engine
-fable . --outDir ./dist
+cd bhavishyawani-engine && fable . --outDir ./dist        # official Fable build
 ```
 
 ### Note on the `evaluateDestiny` signature

@@ -93,11 +93,11 @@ module Vimshottari =
     /// 9-lord cycle three times over (nakshatra index mod 9).
     let nakshatraLord (n: Nakshatra) =
         let idx = Array.findIndex ((=) n) Astronomy.allNakshatras
-        lordCycle.[idx % 9]
+        lordCycle[idx % 9]
 
     let private cycleFrom (start: Graha) =
         let i = Array.findIndex ((=) start) lordCycle
-        Array.init 9 (fun k -> lordCycle.[(i + k) % 9])
+        Array.init 9 (fun k -> lordCycle[(i + k) % 9])
 
     /// Splits [rangeStart, rangeStart + totalDays) into nine consecutive
     /// sub-periods proportioned as dashaYears(lord) / 120, starting from

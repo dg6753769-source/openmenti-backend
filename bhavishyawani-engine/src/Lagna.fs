@@ -143,7 +143,7 @@ module Lagna =
         // min guards the pathological lon = 360.0 - epsilon rounding case.
         let index = min (int (lon / 30.0)) 11
         let traversed = lon - float index * 30.0
-        { Rashi = allRashis.[index]
+        { Rashi = allRashis[index]
           SiderealLongitude = lon
           DistanceToRashiBoundary = min traversed (30.0 - traversed) }
 
@@ -157,6 +157,6 @@ module Lagna =
         else
             let baseIndex = Array.findIndex ((=) lagna.Rashi) allRashis
             let houseLord offsetFromLagna =
-                rashiLord allRashis.[(baseIndex + offsetFromLagna) % 12]
+                rashiLord allRashis[(baseIndex + offsetFromLagna) % 12]
             let lords = [ houseLord 1; houseLord 6 ] |> List.distinct // 2nd, 7th
             MarakaDetermination.ExactFromLagna(lagna.Rashi, lords)
