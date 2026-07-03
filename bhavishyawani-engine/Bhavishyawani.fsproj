@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>Bhavishyawani</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- Compilation order matters in F#: each file may only see the ones above it. -->
+  <ItemGroup>
+    <Compile Include="src/Domain.fs" />
+    <Compile Include="src/Astronomy.fs" />
+    <Compile Include="src/VimshottariDasha.fs" />
+    <Compile Include="src/Lagna.fs" />
+    <Compile Include="src/ClassicalSources.fs" />
+    <Compile Include="src/RuleMatrix.fs" />
+    <Compile Include="src/Engine.fs" />
+    <Compile Include="src/Api.fs" />
+  </ItemGroup>
+
+</Project>

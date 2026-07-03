@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bhavishyawani — Deterministic Prophecy Engine</title>
+<style>
+  :root {
+    --bg: #0d0b1e;
+    --panel: #171332;
+    --panel-2: #1e1940;
+    --line: #322a5e;
+    --ink: #e8e4f8;
+    --muted: #a49bd0;
+    --gold: #d9a94a;
+    --gold-soft: #f0cd8a;
+    --past: #4fa3d1;
+    --future: #b06ad9;
+    --danger: #e07a6a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 50% -10%, #241d4d 0%, var(--bg) 60%);
+    color: var(--ink);
+    font: 16px/1.6 Georgia, "Times New Roman", serif;
+    min-height: 100vh;
+    padding: 2rem 1rem 4rem;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 2rem; }
+  header h1 { font-size: 2rem; letter-spacing: 0.08em; color: var(--gold-soft); font-weight: normal; }
+  header p { color: var(--muted); font-size: 0.95rem; max-width: 620px; margin: 0.5rem auto 0; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  fieldset { border: none; margin-bottom: 1.25rem; }
+  legend {
+    color: var(--gold);
+    font-size: 0.8rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+  }
+  .grid { display: grid; gap: 0.75rem 1rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  label { display: block; font-size: 0.85rem; color: var(--muted); }
+  input, select {
+    width: 100%;
+    margin-top: 0.25rem;
+    padding: 0.5rem 0.6rem;
+    background: var(--panel-2);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.95rem;
+  }
+  input:focus, select:focus { outline: 1px solid var(--gold); }
+  .hint { font-size: 0.78rem; color: var(--muted); margin-top: 0.35rem; font-style: italic; }
+  .sign-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.5rem; margin-bottom: 0.5rem; }
+  button {
+    font: inherit;
+    border: none;
+    border-radius: 6px;
+    padding: 0.65rem 1.3rem;
+    cursor: pointer;
+  }
+  .btn-primary { background: var(--gold); color: #2a1f05; font-weight: bold; letter-spacing: 0.04em; }
+  .btn-primary:hover { background: var(--gold-soft); }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  .btn-ghost:hover { color: var(--ink); border-color: var(--muted); }
+  .btn-small { padding: 0.4rem 0.7rem; font-size: 0.85rem; }
+  .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+  .banner { padding: 0.9rem 1.2rem; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.95rem; }
+  .banner.ok { background: #1d2b1d; border: 1px solid #3c6e3c; color: #bfe8bf; }
+  .banner.refuse { background: #2b2416; border: 1px solid #8a6d2f; color: #ecd9a8; }
+  .banner.error { background: #2b1a18; border: 1px solid #8a4638; color: #f0bdb2; }
+  .banner ul { margin: 0.4rem 0 0 1.2rem; }
+  .summary { display: grid; gap: 0.75rem 1.5rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 0.5rem; }
+  .summary dt { font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  .summary dd { color: var(--gold-soft); }
+  h2.section {
+    font-size: 1.05rem; font-weight: normal; letter-spacing: 0.14em; text-transform: uppercase;
+    margin: 1.75rem 0 0.9rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--line);
+  }
+  h2.section.past { color: var(--past); }
+  h2.section.future { color: var(--future); }
+  .event { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.2rem; margin-bottom: 0.9rem; }
+  .event .when { font-size: 0.9rem; color: var(--gold-soft); }
+  .event .when small { color: var(--muted); }
+  .badges { margin: 0.45rem 0; }
+  .badge {
+    display: inline-block; font-size: 0.7rem; letter-spacing: 0.08em;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 0.1rem 0.6rem; margin-right: 0.35rem; color: var(--muted);
+  }
+  .event .reading { margin: 0.5rem 0; }
+  .event .sources { font-size: 0.82rem; color: var(--muted); }
+  .event .sources li { margin-left: 1.1rem; }
+  details { margin-top: 0.5rem; }
+  summary { cursor: pointer; font-size: 0.82rem; color: var(--muted); }
+  details li { font-size: 0.82rem; color: var(--muted); margin-left: 1.1rem; }
+  #results:empty { display: none; }
+  .loading { color: var(--muted); font-style: italic; }
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; margin-top: 2.5rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>&#x1F52E; Bhavishyawani</h1>
+    <p>Deterministic prophecy engine — Brihat Parashara Hora Shastra &times; Samudrika Shastra.
+       A window is shown only when at least two independent classical systems converge on it;
+       otherwise the engine refuses, and says exactly why.</p>
+  </header>
+
+  <form class="card" id="chartForm">
+    <fieldset>
+      <legend>Birth Data</legend>
+      <div class="grid">
+        <label>Date (UTC)
+          <input type="date" id="date" required min="1800-01-01" max="2200-12-31" />
+        </label>
+        <label>Time (UTC)
+          <input type="time" id="time" required step="60" />
+        </label>
+        <label>Latitude
+          <input type="number" id="lat" required step="any" min="-66.5" max="66.5" placeholder="28.6139" />
+        </label>
+        <label>Longitude
+          <input type="number" id="lon" required step="any" min="-180" max="180" placeholder="77.2090" />
+        </label>
+      </div>
+      <p class="hint">Convert the local birth time to UTC first (e.g. 08:00 IST = 02:30 UTC). The engine does not guess timezones.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Palm — Primary Lines (leave blank if not observed)</legend>
+      <div class="grid" id="lines"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Palm — Mounts (leave blank if not observed)</legend>
+      <div class="grid" id="mounts"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Auspicious Markings</legend>
+      <div id="signs"></div>
+      <button type="button" class="btn-ghost btn-small" id="addSign">+ Add marking</button>
+    </fieldset>
+
+    <div class="actions">
+      <button type="submit" class="btn-primary" id="submitBtn">Reveal Timeline</button>
+      <button type="button" class="btn-ghost" id="demoBtn">Load demo chart</button>
+      <span class="loading" id="loading" hidden>consulting the classical corpus&hellip;</span>
+    </div>
+  </form>
+
+  <div id="results"></div>
+
+  <footer>The engine applies the classical rules with mathematical repeatability; the claims are the texts&rsquo; own.
+    Vague input yields an explicit refusal, never filler.</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var LINES = [
+    ["heartLine", "Heart line"], ["headLine", "Head line"],
+    ["lifeLine", "Life line"], ["fateLine", "Fate line"]
+  ];
+  var LINE_STATES = ["Deep", "Chained", "Broken", "Forked"];
+  var MOUNTS = [
+    ["jupiterMount", "Jupiter mount"], ["saturnMount", "Saturn mount"],
+    ["sunMount", "Sun mount"], ["mercuryMount", "Mercury mount"]
+  ];
+  var PROMINENCES = ["High", "Flat", "Depressed"];
+  var MARKINGS = ["Lotus", "Fish", "Trident", "Conch", "Temple"];
+  var LOCATIONS = ["Jupiter", "Saturn", "Sun", "Mercury"];
+
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === "text") node.textContent = attrs[k];
+      else node.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (c) { node.appendChild(c); });
+    return node;
+  }
+
+  function selectFor(id, options) {
+    var s = el("select", { id: id });
+    s.appendChild(el("option", { value: "", text: "— not observed —" }));
+    options.forEach(function (o) { s.appendChild(el("option", { value: o, text: o })); });
+    return s;
+  }
+
+  LINES.forEach(function (pair) {
+    var label = el("label", { text: pair[1] });
+    label.appendChild(selectFor(pair[0], LINE_STATES));
+    document.getElementById("lines").appendChild(label);
+  });
+  MOUNTS.forEach(function (pair) {
+    var label = el("label", { text: pair[1] });
+    label.appendChild(selectFor(pair[0], PROMINENCES));
+    document.getElementById("mounts").appendChild(label);
+  });
+
+  function addSignRow(marking, location) {
+    var row = el("div", { "class": "sign-row" });
+    var m = selectFor("", MARKINGS); m.removeAttribute("id"); m.className = "sign-marking";
+    var l = selectFor("", LOCATIONS); l.removeAttribute("id"); l.className = "sign-location";
+    if (marking) m.value = marking;
+    if (location) l.value = location;
+    var rm = el("button", { type: "button", "class": "btn-ghost btn-small", text: "remove" });
+    rm.addEventListener("click", function () { row.remove(); });
+    row.appendChild(m); row.appendChild(l); row.appendChild(rm);
+    document.getElementById("signs").appendChild(row);
+  }
+  document.getElementById("addSign").addEventListener("click", function () { addSignRow(); });
+
+  document.getElementById("demoBtn").addEventListener("click", function () {
+    document.getElementById("date").value = "1990-03-14";
+    document.getElementById("time").value = "02:30";
+    document.getElementById("lat").value = "28.6139";
+    document.getElementById("lon").value = "77.2090";
+    document.getElementById("heartLine").value = "Chained";
+    document.getElementById("lifeLine").value = "Broken";
+    document.getElementById("fateLine").value = "Deep";
+    document.getElementById("jupiterMount").value = "High";
+    document.getElementById("signs").innerHTML = "";
+    addSignRow("Fish", "Jupiter");
+  });
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function fmtDate(iso) { return iso.slice(0, 10); }
+
+  function eventCard(e) {
+    var badges = e.systemsAligned.map(function (s) { return '<span class="badge">' + esc(s) + "</span>"; }).join("");
+    var sources = e.sources.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("");
+    var witnesses = e.witnesses.map(function (w) { return "<li>" + esc(w) + "</li>"; }).join("");
+    var peak = e.peakStartUtcIso
+      ? " <small>&middot; peak focus " + esc(fmtDate(e.peakStartUtcIso)) + " &rarr; " + esc(fmtDate(e.peakEndUtcIso)) + "</small>"
+      : "";
+    return '<div class="event">' +
+      '<div class="when">' + esc(fmtDate(e.startUtcIso)) + " &rarr; " + esc(fmtDate(e.endUtcIso)) +
+      " <small>(age " + e.ageStart.toFixed(1) + "&ndash;" + e.ageEnd.toFixed(1) + ")</small>" + peak + "</div>" +
+      '<div class="badges">' + badges + "</div>" +
+      '<p class="reading">' + esc(e.reading) + "</p>" +
+      "<details><summary>Witnesses (" + e.witnesses.length + ")</summary><ul>" + witnesses + "</ul></details>" +
+      '<ul class="sources">' + sources + "</ul>" +
+      "</div>";
+  }
+
+  function render(r) {
+    var out = document.getElementById("results");
+    if (r.status === "ExactTimeline") {
+      var past = r.events.filter(function (e) { return e.eventType === "PastVerification"; });
+      var future = r.events.filter(function (e) { return e.eventType === "FuturePrediction"; });
+      var html = '<div class="card">' +
+        '<div class="banner ok">Exact timeline derived — ' + r.events.length +
+        " window(s) where independent systems align.</div>" +
+        '<dl class="summary">' +
+        "<div><dt>Natal Moon</dt><dd>" + esc(r.moonNakshatra) + " (" + r.moonSiderealLongitude.toFixed(2) + "&deg; sidereal)</dd></div>" +
+        "<div><dt>Lagna</dt><dd>" + esc(r.lagnaRashi) + " (" + r.lagnaSiderealLongitude.toFixed(2) + "&deg; sidereal)</dd></div>" +
+        "<div><dt>Maraka basis</dt><dd>" + esc(r.marakaBasis) + "</dd></div>" +
+        "</dl>";
+      if (past.length) {
+        html += '<h2 class="section past">Past — verify these against your life</h2>' + past.map(eventCard).join("");
+      }
+      if (future.length) {
+        html += '<h2 class="section future">Future — predicted windows</h2>' + future.map(eventCard).join("");
+      }
+      html += "</div>";
+      out.innerHTML = html;
+    } else {
+      var cls = r.status === "InvalidInput" ? "error" : "refuse";
+      var title = r.status === "InvalidInput"
+        ? "The input could not be accepted:"
+        : "The engine refuses to predict — insufficient data for an exact reading:";
+      out.innerHTML = '<div class="card"><div class="banner ' + cls + '">' + title +
+        "<ul>" + r.reasons.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div></div>";
+    }
+    out.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  document.getElementById("chartForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var date = document.getElementById("date").value.split("-").map(Number);
+    var time = document.getElementById("time").value.split(":").map(Number);
+    var body = {
+      birthUtc: {
+        year: date[0], month: date[1], day: date[2],
+        hourUtc: time[0], minuteUtc: time[1], secondUtc: 0
+      },
+      latitude: parseFloat(document.getElementById("lat").value),
+      longitude: parseFloat(document.getElementById("lon").value),
+      signs: Array.prototype.map.call(document.querySelectorAll(".sign-row"), function (row) {
+        return {
+          marking: row.querySelector(".sign-marking").value,
+          location: row.querySelector(".sign-location").value
+        };
+      }).filter(function (s) { return s.marking && s.location; })
+    };
+    LINES.concat(MOUNTS).forEach(function (pair) {
+      body[pair[0]] = document.getElementById(pair[0]).value;
+    });
+
+    var loading = document.getElementById("loading");
+    var btn = document.getElementById("submitBtn");
+    loading.hidden = false; btn.disabled = true;
+    fetch("/api/bhavishyawani", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    })
+      .then(function (resp) { return resp.json(); })
+      .then(render)
+      .catch(function (err) {
+        render({ status: "InvalidInput", reasons: ["Could not reach the engine: " + err.message], events: [] });
+      })
+      .then(function () { loading.hidden = true; btn.disabled = false; });
+  });
+})();
+</script>
+</body>
+</html>

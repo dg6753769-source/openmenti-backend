@@ -1,0 +1,12 @@
+{
+  "name": "bhavishyawani-engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Type-safe F# Vedic prediction engine (Fable-compiled to dependency-free JavaScript)",
+  "type": "module",
+  "main": "dist/src/Api.js",
+  "scripts": {
+    "test": "node tests/functional-test.mjs",
+    "build": "npx @fable-org/fable-compiler-js Bhavishyawani.fsproj dist --fableLib ./dist/fable-library"
+  }
+}
