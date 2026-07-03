@@ -56,6 +56,10 @@ io.on("connection", (socket) => {
 
 // ---------- Bhavishyawani prediction engine ----------
 
+app.get("/bhavishyawani", (req, res) =>
+  res.sendFile(new URL("./public/bhavishyawani.html", import.meta.url).pathname)
+);
+
 // Coerces an HTTP body into the engine's UserMetricsDto. Palm fields default
 // to "" (= not observed); the engine itself validates all field values.
 function toEngineDto(body) {
